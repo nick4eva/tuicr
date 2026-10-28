@@ -49,6 +49,30 @@ pub fn patch_highlighted_span_bg(style: Style, theme: &Theme, origin: LineOrigin
     }
 }
 
+/// Style patched over the changed words of a paired deletion/addition line:
+/// the line's background pushed toward its diff foreground, so it stays in
+/// the same hue but stands out. `highlighted` selects the syntax background
+/// the line is drawn on. Themes using named terminal colors can't be blended
+/// and get reversed video instead.
+pub fn word_emphasis_style(theme: &Theme, origin: LineOrigin, highlighted: bool) -> Style {
+    let (line_bg, accent) = match (origin, highlighted) {
+        (LineOrigin::Addition, true) => (theme.syntax_add_bg, theme.diff_add),
+        (LineOrigin::Addition, false) => (theme.diff_add_bg, theme.diff_add),
+        (LineOrigin::Deletion, true) => (theme.syntax_del_bg, theme.diff_del),
+        (LineOrigin::Deletion, false) => (theme.diff_del_bg, theme.diff_del),
+        (LineOrigin::Context, _) => return Style::default(),
+    };
+    match (line_bg, accent) {
+        (Color::Rgb(..), Color::Rgb(..)) => {
+            Style::default().bg(crate::theme::blend(line_bg, accent, WORD_EMPHASIS_PERCENT))
+        }
+        _ => Style::default().add_modifier(Modifier::REVERSED),
+    }
+}
+
+/// How far `word_emphasis_style` moves the background toward the foreground.
+const WORD_EMPHASIS_PERCENT: u8 = 30;
+
 pub fn expanded_context_style(theme: &Theme) -> Style {
     Style::default().fg(theme.expanded_context_fg)
 }

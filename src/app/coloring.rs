@@ -8,9 +8,10 @@ impl App {
     /// `max_rows` is the frame's height.
     /// `diff_state.viewport_height` is written during render.
     pub(crate) fn color_visible_hunks(&mut self, max_rows: usize) -> usize {
+        let visible = self.visible_hunk_indices(max_rows);
+        self.diff_words_in_hunks(&visible);
         let highlighter = self.theme.syntax_highlighter();
-        let unvisited: Vec<(usize, usize)> = self
-            .visible_hunk_indices(max_rows)
+        let unvisited: Vec<(usize, usize)> = visible
             .into_iter()
             .filter(|key| self.colored_hunks.insert(*key))
             .collect();
@@ -35,6 +36,50 @@ impl App {
                 Some(())
             })
             .count()
+    }
+
+    /// Fill `word_diff_ranges` for the given hunks that don't have an entry
+    /// yet. A no-op while `word_diff` is off.
+    fn diff_words_in_hunks(&mut self, hunks: &[(usize, usize)]) {
+        if !self.word_diff {
+            return;
+        }
+        for &key in hunks {
+            if self.word_diff_ranges.contains_key(&key) {
+                continue;
+            }
+            let Some(hunk) = self
+                .diff_files
+                .get(key.0)
+                .and_then(|file| file.hunks.get(key.1))
+            else {
+                continue;
+            };
+            let ranges = crate::word_diff::hunk_changed_ranges(&hunk.lines);
+            self.word_diff_ranges.insert(key, ranges.into());
+        }
+    }
+
+    /// Changed-word ranges for every line of a hunk, when `word_diff` is on
+    /// and the hunk has been near the viewport.
+    pub(crate) fn hunk_word_ranges(
+        &self,
+        file_idx: usize,
+        hunk_idx: usize,
+    ) -> Option<HunkChangedRanges> {
+        if !self.word_diff {
+            return None;
+        }
+        self.word_diff_ranges.get(&(file_idx, hunk_idx)).cloned()
+    }
+
+    pub fn set_word_diff(&mut self, enabled: bool) {
+        self.word_diff = enabled;
+        if !enabled {
+            self.word_diff_ranges.clear();
+        }
+        let status = if enabled { "on" } else { "off" };
+        self.set_message(format!("Word diff: {status}"));
     }
 
     /// Visible hunks are those in the viewport plus and minus one screen
